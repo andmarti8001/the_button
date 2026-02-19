@@ -1,7 +1,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdatomic.h>
+#include <raylib.h>
 #include "play.h"
+#include "synth.h"
 
 #ifndef PLAY_DEBUG_OUTLINE
 #define PLAY_DEBUG_OUTLINE 1
@@ -11,8 +14,26 @@
 #define PLAY_SCROLL_STEP_SECONDS 0.03f
 #endif
 
+#ifndef PLAY_AUDIO_SAMPLE_RATE
+#define PLAY_AUDIO_SAMPLE_RATE 48000
+#endif
+
 #define PLAY_MIN_BPM 40
 #define PLAY_MAX_BPM 300
+
+static AudioStream g_play_stream;
+static synth_t g_play_synth;
+static int g_play_stream_loaded = 0;
+static _Atomic int g_audio_cmd = 0;
+static _Atomic int g_note_count = 0;
+static _Atomic int g_note0 = 60;
+static _Atomic int g_note1 = 64;
+
+enum {
+    PLAY_AUDIO_CMD_NONE = 0,
+    PLAY_AUDIO_CMD_NOTE_ON,
+    PLAY_AUDIO_CMD_NOTE_OFF
+};
 
 static int clampi(int v, int lo, int hi)
 {
@@ -248,6 +269,83 @@ static void analyze_melody_range(play_state_t *state)
     }
 }
 
+static void play_audio_callback(void *buffer_data, unsigned int frames)
+{
+    float *out = (float *)buffer_data;
+    const int cmd = atomic_exchange(&g_audio_cmd, PLAY_AUDIO_CMD_NONE);
+
+    if (cmd == PLAY_AUDIO_CMD_NOTE_ON)
+    {
+        uint8_t notes[2];
+        int count = atomic_load(&g_note_count);
+        if (count < 0) count = 0;
+        if (count > 2) count = 2;
+        notes[0] = (uint8_t)atomic_load(&g_note0);
+        notes[1] = (uint8_t)atomic_load(&g_note1);
+        synth_set_chord(&g_play_synth, notes, count);
+    }
+    else if (cmd == PLAY_AUDIO_CMD_NOTE_OFF)
+    {
+        synth_gate_off(&g_play_synth);
+    }
+
+    for (unsigned int i = 0; i < frames; i++)
+        out[i] = synth_next_sample(&g_play_synth);
+}
+
+static void play_audio_start(play_state_t *state)
+{
+    if (state->audio_active)
+        return;
+
+    if (!IsAudioDeviceReady())
+        InitAudioDevice();
+
+    synth_init(&g_play_synth, PLAY_AUDIO_SAMPLE_RATE);
+    g_play_stream = LoadAudioStream(PLAY_AUDIO_SAMPLE_RATE, 32, 1);
+    SetAudioStreamCallback(g_play_stream, play_audio_callback);
+    PlayAudioStream(g_play_stream);
+    g_play_stream_loaded = 1;
+    state->audio_active = 1;
+}
+
+static void play_audio_stop(play_state_t *state)
+{
+    if (!state->audio_active)
+        return;
+
+    if (g_play_stream_loaded)
+    {
+        UnloadAudioStream(g_play_stream);
+        g_play_stream_loaded = 0;
+    }
+    if (IsAudioDeviceReady())
+        CloseAudioDevice();
+
+    state->audio_active = 0;
+}
+
+static void play_audio_note_on(play_state_t *state)
+{
+    if (!state->melody_loaded || state->melody.group_count <= 0)
+        return;
+
+    {
+        const midi_note_group_t *g = &state->melody.groups[state->step_index];
+        int count = g->note_count;
+        if (count > 2) count = 2;
+        atomic_store(&g_note_count, count);
+        atomic_store(&g_note0, (count > 0) ? g->notes[0] : 60);
+        atomic_store(&g_note1, (count > 1) ? g->notes[1] : 64);
+        atomic_store(&g_audio_cmd, PLAY_AUDIO_CMD_NOTE_ON);
+    }
+}
+
+static void play_audio_note_off(void)
+{
+    atomic_store(&g_audio_cmd, PLAY_AUDIO_CMD_NOTE_OFF);
+}
+
 void play_init(play_state_t *state)
 {
     play_deinit(state);
@@ -262,6 +360,7 @@ void play_init(play_state_t *state)
     state->step_index = 0;
     state->scroll_accum = 0.0f;
     state->history_width = 0;
+    state->audio_active = 0;
     memset(state->history_cols, 0, sizeof(state->history_cols));
 
     if (midi_extract_track_notes("songs/demo.mid", "lead", &state->melody) == 0 && state->melody.group_count > 0)
@@ -273,10 +372,15 @@ void play_init(play_state_t *state)
     {
         state->melody_loaded = 0;
     }
+
+    play_audio_start(state);
 }
 
 void play_deinit(play_state_t *state)
 {
+    play_audio_note_off();
+    play_audio_stop(state);
+
     if (state->melody_loaded)
         midi_free_note_sequence(&state->melody);
     memset(&state->melody, 0, sizeof(state->melody));
@@ -301,6 +405,8 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
         {
             state->select_mode = 0;
             state->is_playing = 1; // "restart play session"
+            if (state->prev_play_down)
+                play_audio_note_on(state);
         }
     }
     else
@@ -315,9 +421,11 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
             {
                 state->is_playing = 0;   // "turn the song off"
                 state->select_mode = 1;  // enter BPM edit mode
+                play_audio_note_off();
             }
             else
             {
+                play_audio_note_off();
                 return PLAY_ACTION_EXIT_TO_MENU;
             }
         }
@@ -326,10 +434,15 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
     if (state->melody_loaded && state->melody.group_count > 0)
     {
         if (play_pressed)
+        {
             state->is_playing = 1;
+            if (!state->select_mode)
+                play_audio_note_on(state);
+        }
 
         if (play_released)
         {
+            play_audio_note_off();
             state->step_index++;
             if (state->step_index >= state->melody.group_count)
                 state->step_index = 0;

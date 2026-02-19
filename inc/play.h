@@ -25,6 +25,7 @@ typedef struct {
 
     midi_note_sequence_t melody;
     int melody_loaded;
+    int audio_active;
 
     uint64_t history_cols[128];
     int history_width;
