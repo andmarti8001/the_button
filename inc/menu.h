@@ -13,7 +13,7 @@ typedef enum {
 typedef struct {
     int selected;
     int scroll_top;
-    int prev_play_down;
+    int prev_select_down;
 } menu_state_t;
 
 void menu_init(menu_state_t *state);

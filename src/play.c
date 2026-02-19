@@ -488,7 +488,7 @@ void play_init(play_state_t *state)
     memset(&g_backing_hardp, 0, sizeof(g_backing_hardp));
     memset(&g_backing_bass, 0, sizeof(g_backing_bass));
 
-    if (midi_extract_track_notes("songs/demo.mid", "lead", &state->melody) == 0 && state->melody.group_count > 0)
+    if (midi_extract_track_notes("assets/songs/demo.mid", "lead", &state->melody) == 0 && state->melody.group_count > 0)
     {
         state->melody_loaded = 1;
         analyze_melody_range(state);
@@ -498,14 +498,14 @@ void play_init(play_state_t *state)
         state->melody_loaded = 0;
     }
 
-    if (midi_extract_song_bpm("songs/demo.mid", &song_bpm) == 0)
+    if (midi_extract_song_bpm("assets/songs/demo.mid", &song_bpm) == 0)
         state->bpm = clampi(song_bpm, PLAY_MIN_BPM, PLAY_MAX_BPM);
 
-    if (midi_extract_track_note_events("songs/demo.mid", "soft_p", &g_backing_softp.midi) == 0)
+    if (midi_extract_track_note_events("assets/songs/demo.mid", "soft_p", &g_backing_softp.midi) == 0)
         g_backing_softp.loaded = 1;
-    if (midi_extract_track_note_events("songs/demo.mid", "hard_p", &g_backing_hardp.midi) == 0)
+    if (midi_extract_track_note_events("assets/songs/demo.mid", "hard_p", &g_backing_hardp.midi) == 0)
         g_backing_hardp.loaded = 1;
-    if (midi_extract_track_note_events("songs/demo.mid", "bass", &g_backing_bass.midi) == 0)
+    if (midi_extract_track_note_events("assets/songs/demo.mid", "bass", &g_backing_bass.midi) == 0)
         g_backing_bass.loaded = 1;
 
     if (g_backing_softp.loaded) g_song_tpq = g_backing_softp.midi.ticks_per_quarter;

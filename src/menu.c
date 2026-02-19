@@ -155,7 +155,7 @@ void menu_init(menu_state_t *state)
 {
     state->selected = 0;
     state->scroll_top = 0;
-    state->prev_play_down = 0;
+    state->prev_select_down = 0;
 }
 
 menu_action_t menu_update(menu_state_t *state, input_poll_t in)
@@ -179,10 +179,11 @@ menu_action_t menu_update(menu_state_t *state, input_poll_t in)
     const int max_top = MENU_ITEM_COUNT - visible_rows;
     state->scroll_top = clampi(state->scroll_top, 0, (max_top > 0) ? max_top : 0);
 
-    const int play_pressed = (in.play_down && !state->prev_play_down) ? 1 : 0;
-    state->prev_play_down = in.play_down ? 1 : 0;
+    const int select_down = (in.rot_down || in.play_down) ? 1 : 0;
+    const int select_pressed = (select_down && !state->prev_select_down) ? 1 : 0;
+    state->prev_select_down = select_down;
 
-    if (!play_pressed)
+    if (!select_pressed)
         return MENU_ACTION_NONE;
 
     if (state->selected == 0)

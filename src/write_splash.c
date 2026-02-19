@@ -5,6 +5,7 @@
 #include <raylib.h>
 #include "input_poll.h"
 #include "intro_animation.h"
+#include "intro_audio.h"
 #include "menu.h"
 #include "play.h"
 
@@ -317,18 +318,20 @@ int main(void)
     Texture2D tex = LoadTextureFromImage(img);
     UnloadImage(img);
     SetTextureFilter(tex, TEXTURE_FILTER_POINT);
+    intro_audio_start();
 
     Color pixels[FB_WIDTH * FB_HEIGHT];
     double last_print_time = GetTime();
     double splash_start_time = GetTime();
-    int prev_play_down = 0;
+    int prev_select_down = 0;
 
     while (!WindowShouldClose())
     {
         const double now = GetTime();
         const input_poll_t in = input_poll();
-        const int play_pressed = (in.play_down && !prev_play_down) ? 1 : 0;
-        prev_play_down = in.play_down ? 1 : 0;
+        const int select_down = (in.rot_down || in.play_down) ? 1 : 0;
+        const int select_pressed = (select_down && !prev_select_down) ? 1 : 0;
+        prev_select_down = select_down;
 
         if ((now - last_print_time) >= 0.1)
         {
@@ -351,10 +354,11 @@ int main(void)
                 fb_copy(framebuffer, splash_fb);
             }
 
-            if (play_pressed)
+            if (select_pressed)
             {
+                intro_audio_stop();
                 menu_init(&menu_state);
-                menu_state.prev_play_down = in.play_down ? 1 : 0;
+                menu_state.prev_select_down = select_down;
                 app_state = APP_MENU;
             }
         }
@@ -372,6 +376,7 @@ int main(void)
             {
                 app_state = APP_SPLASH;
                 splash_start_time = now;
+                intro_audio_start();
             }
         }
         else
@@ -403,6 +408,7 @@ int main(void)
     }
 
     play_deinit(&play_state);
+    intro_audio_stop();
     UnloadTexture(tex);
     CloseWindow();
     return 0;

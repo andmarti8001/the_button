@@ -65,9 +65,9 @@ int main(void)
     int step_index = 0;
     int prev_play_down = 0;
 
-    if (midi_extract_track_notes("songs/demo.mid", PLAY_AUDIO_TRACK_NAME, &seq) != 0)
+    if (midi_extract_track_notes("assets/songs/demo.mid", PLAY_AUDIO_TRACK_NAME, &seq) != 0)
     {
-        fprintf(stderr, "Failed to parse songs/demo.mid track '%s'\n", PLAY_AUDIO_TRACK_NAME);
+        fprintf(stderr, "Failed to parse assets/songs/demo.mid track '%s'\n", PLAY_AUDIO_TRACK_NAME);
         return 1;
     }
 
