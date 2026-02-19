@@ -68,16 +68,6 @@ static void draw_filled_rect(uint8_t *fb, int width, int height, int x, int y, i
         draw_hline(fb, width, height, x, x + w - 1, yy);
 }
 
-static void draw_dotted_hline(uint8_t *fb, int width, int height, int x0, int x1, int y)
-{
-    if (y < 0 || y >= height) return;
-    if (x0 > x1) { int t = x0; x0 = x1; x1 = t; }
-    x0 = clampi(x0, 0, width - 1);
-    x1 = clampi(x1, 0, width - 1);
-    for (int x = x0; x <= x1; x += 2)
-        set_pixel(fb, width, height, x, y);
-}
-
 static void draw_dotted_rect(uint8_t *fb, int width, int height, int x, int y, int w, int h)
 {
     if (w <= 1 || h <= 1) return;
@@ -184,12 +174,19 @@ static int note_to_row(const play_state_t *state, int note, int play_h)
 {
     if (play_h <= 1)
         return 0;
-    if (state->note_max <= state->note_min)
-        return (play_h - 1) / 2;
 
-    const int num = (state->note_max - note) * (play_h - 1);
+    // 10% vertical padding inside play area: 5% top + 5% bottom.
+    const int pad = clampi(play_h / 20, 1, (play_h - 1) / 2);
+    const int inner_top = pad;
+    const int inner_bottom = play_h - 1 - pad;
+    const int inner_h = inner_bottom - inner_top + 1;
+
+    if (inner_h <= 1 || state->note_max <= state->note_min)
+        return clampi((play_h - 1) / 2, 0, play_h - 1);
+
+    const int num = (state->note_max - note) * (inner_h - 1);
     const int den = (state->note_max - state->note_min);
-    return clampi(num / den, 0, play_h - 1);
+    return clampi(inner_top + (num / den), 0, play_h - 1);
 }
 
 static uint64_t build_present_mask(const play_state_t *state, int play_h, int play_down)
@@ -397,15 +394,6 @@ void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
                     set_pixel(fb, width, height, x, play_y + row);
             }
         }
-    }
-
-    // Optional melody range guides (dotted).
-    if (state->melody_loaded && state->note_max >= state->note_min)
-    {
-        const int top_row = note_to_row(state, state->note_max, play_h);
-        const int bot_row = note_to_row(state, state->note_min, play_h);
-        draw_dotted_hline(fb, width, height, 0, width - 1, play_y + top_row);
-        draw_dotted_hline(fb, width, height, 0, width - 1, play_y + bot_row);
     }
 
     // Right wall "present state" arrow indicator on active note lines.
