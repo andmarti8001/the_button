@@ -4,17 +4,7 @@
 
 static const char *k_menu_items[] = {
     "DEMO",
-    "EXIT",
-    "PLACEHOLDER1",
-    "PLACEHOLDER2",
-    "PLACEHOLDER3",
-    "PLACEHOLDER4",
-    "PLACEHOLDER5",
-    "PLACEHOLDER6",
-    "PLACEHOLDER7",
-    "PLACEHOLDER8",
-    "PLACEHOLDER9",
-    "PLACEHOLDER10"
+    "EXIT"
 };
 
 #define MENU_ITEM_COUNT ((int)(sizeof(k_menu_items) / sizeof(k_menu_items[0])))

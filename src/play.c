@@ -554,11 +554,14 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
             state->ignore_initial_play = 0;
     }
 
+    const int play_enabled = state->select_mode ? 0 : 1;
+    const int play_down_for_logic = play_enabled ? play_down_effective : 0;
+
     const int rot_pressed = (in.rot_down && !state->prev_rot_down) ? 1 : 0;
-    const int play_pressed = (play_down_effective && !state->prev_play_down) ? 1 : 0;
-    const int play_released = (!play_down_effective && state->prev_play_down) ? 1 : 0;
+    const int play_pressed = (play_down_for_logic && !state->prev_play_down) ? 1 : 0;
+    const int play_released = (!play_down_for_logic && state->prev_play_down) ? 1 : 0;
     state->prev_rot_down = in.rot_down ? 1 : 0;
-    state->prev_play_down = play_down_effective;
+    state->prev_play_down = play_down_for_logic;
 
     if (state->select_mode)
     {
@@ -625,7 +628,7 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
     {
         const int top_h = (height * 20) / 100;
         const int play_h = height - top_h;
-        uint64_t present_mask = build_present_mask(state, play_h, play_down_effective);
+        uint64_t present_mask = build_present_mask(state, play_h, play_down_for_logic);
         state->scroll_accum += dt_seconds;
 
         while (state->scroll_accum >= PLAY_SCROLL_STEP_SECONDS)
