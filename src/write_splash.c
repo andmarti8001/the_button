@@ -5,6 +5,8 @@
 #include <raylib.h>
 #include "input_poll.h"
 #include "intro_animation.h"
+#include "menu.h"
+#include "play.h"
 
 #ifndef FB_WIDTH
 #define FB_WIDTH 128
@@ -283,9 +285,18 @@ static void fb_to_rgba(const uint8_t fb[FB_SIZE], Color *rgba)
 
 int main(void)
 {
+    typedef enum {
+        APP_SPLASH = 0,
+        APP_MENU,
+        APP_PLAY
+    } app_state_t;
+
     uint8_t framebuffer[FB_SIZE];
     uint8_t splash_fb[FB_SIZE];
     draw_splash(splash_fb);
+    menu_state_t menu_state;
+    menu_init(&menu_state);
+    app_state_t app_state = APP_SPLASH;
 
     const float aspect = (float)FB_WIDTH / (float)FB_HEIGHT;
     const float lcd_h_inches = LCD_DIAGONAL_INCHES / sqrtf((aspect * aspect) + 1.0f);
@@ -307,29 +318,60 @@ int main(void)
 
     Color pixels[FB_WIDTH * FB_HEIGHT];
     double last_print_time = GetTime();
-    const double start_time = GetTime();
+    double splash_start_time = GetTime();
+    int prev_play_down = 0;
 
     while (!WindowShouldClose())
     {
         const double now = GetTime();
+        const input_poll_t in = input_poll();
+        const int play_pressed = (in.play_down && !prev_play_down) ? 1 : 0;
+        prev_play_down = in.play_down ? 1 : 0;
+
         if ((now - last_print_time) >= 0.1)
         {
-            const input_poll_t in = input_poll();
             printf("state_poll rot_dl=%d rot_dr=%d rot_down=%d play_down=%d\n",
                    in.rot_dl, in.rot_dr, in.rot_down, in.play_down);
             fflush(stdout);
             last_print_time = now;
         }
 
-        const double elapsed = now - start_time;
-        if (elapsed < 3.0)
+        if (app_state == APP_SPLASH)
         {
-            const float t = (float)(elapsed / 3.0);
-            draw_intro_animation(framebuffer, splash_fb, FB_WIDTH, FB_HEIGHT, t);
+            const double elapsed = now - splash_start_time;
+            if (elapsed < 3.0)
+            {
+                const float t = (float)(elapsed / 3.0);
+                draw_intro_animation(framebuffer, splash_fb, FB_WIDTH, FB_HEIGHT, t);
+            }
+            else
+            {
+                fb_copy(framebuffer, splash_fb);
+            }
+
+            if (play_pressed)
+            {
+                menu_init(&menu_state);
+                menu_state.prev_play_down = in.play_down ? 1 : 0;
+                app_state = APP_MENU;
+            }
+        }
+        else if (app_state == APP_MENU)
+        {
+            const menu_action_t action = menu_update(&menu_state, in);
+            write_menu(framebuffer, FB_WIDTH, FB_HEIGHT, &menu_state);
+
+            if (action == MENU_ACTION_DEMO)
+                app_state = APP_PLAY;
+            else if (action == MENU_ACTION_EXIT)
+            {
+                app_state = APP_SPLASH;
+                splash_start_time = now;
+            }
         }
         else
         {
-            fb_copy(framebuffer, splash_fb);
+            write_play(framebuffer, FB_WIDTH, FB_HEIGHT);
         }
 
         fb_to_rgba(framebuffer, pixels);

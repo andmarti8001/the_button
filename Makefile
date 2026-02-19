@@ -11,7 +11,7 @@ endif
 
 LDFLAGS := $(RAYLIB_LIBS) -lm
 
-SRC := src/write_splash.c src/inputs.c src/intro_animation.c
+SRC := src/write_splash.c src/inputs.c src/intro_animation.c src/menu.c src/play.c
 BIN := splash_viewer
 
 .PHONY: install-deps build run clean
