@@ -15,6 +15,7 @@ typedef struct {
     int selected;      // 0 = BPM, 1 = X
     int select_mode;   // 1 while editing BPM
     int is_playing;    // 1 while session is active
+    int ignore_initial_play;
     int prev_rot_down; // edge detection for rot_down
     int prev_play_down;
 
