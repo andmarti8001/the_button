@@ -15,9 +15,10 @@ typedef struct {
     char song_path[SONG_PATH_MAX];
     char song_title[SONG_NAME_MAX];
     int bpm;
-    int selected;      // 0 = BPM, 1 = X
+    int selected;      // 0 = PS/SS, 1 = BPM, 2 = X
     int select_mode;   // 1 while editing BPM
-    int is_playing;    // 1 while session is active
+    int is_playing;    // 1 while transport running
+    int has_started_once;
     int ignore_initial_play;
     int prev_rot_down; // edge detection for rot_down
     int prev_play_down;

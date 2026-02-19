@@ -123,13 +123,6 @@ static void draw_rect(uint8_t *fb, int width, int height, int x, int y, int w, i
     draw_vline(fb, width, height, x + w - 1, y, y + h - 1);
 }
 
-static void draw_filled_rect(uint8_t *fb, int width, int height, int x, int y, int w, int h)
-{
-    if (w <= 0 || h <= 0) return;
-    for (int yy = y; yy < (y + h); yy++)
-        draw_hline(fb, width, height, x, x + w - 1, yy);
-}
-
 static void draw_dotted_rect(uint8_t *fb, int width, int height, int x, int y, int w, int h)
 {
     if (w <= 1 || h <= 1) return;
@@ -266,6 +259,42 @@ static int text_width_5x7(const char *s)
     int n = 0;
     while (s[n]) n++;
     return (n > 0) ? (n * 6 - 1) : 0;
+}
+
+static void draw_transport_icon(uint8_t *fb, int width, int height, int x, int y, int is_play, int selected)
+{
+    // Bigger transport slot (about 24x11 px) with larger icon.
+    if (selected)
+    {
+        // Left bracket
+        draw_vline(fb, width, height, x + 0, y, y + 10);
+        draw_hline(fb, width, height, x + 0, x + 3, y);
+        draw_hline(fb, width, height, x + 0, x + 3, y + 10);
+        // Right bracket
+        draw_vline(fb, width, height, x + 23, y, y + 10);
+        draw_hline(fb, width, height, x + 20, x + 23, y);
+        draw_hline(fb, width, height, x + 20, x + 23, y + 10);
+    }
+
+    if (is_play)
+    {
+        // Larger play triangle.
+        draw_hline(fb, width, height, x + 9,  x + 9,  y + 3);
+        draw_hline(fb, width, height, x + 9,  x + 10, y + 4);
+        draw_hline(fb, width, height, x + 9,  x + 11, y + 5);
+        draw_hline(fb, width, height, x + 9,  x + 12, y + 6);
+        draw_hline(fb, width, height, x + 9,  x + 11, y + 7);
+        draw_hline(fb, width, height, x + 9,  x + 10, y + 8);
+        draw_hline(fb, width, height, x + 9,  x + 9,  y + 9);
+    }
+    else
+    {
+        // Larger pause icon (two bars, 2px thick).
+        draw_vline(fb, width, height, x + 9,  y + 3, y + 9);
+        draw_vline(fb, width, height, x + 10, y + 3, y + 9);
+        draw_vline(fb, width, height, x + 13, y + 3, y + 9);
+        draw_vline(fb, width, height, x + 14, y + 3, y + 9);
+    }
 }
 
 static int note_to_row(const play_state_t *state, int note, int play_h)
@@ -535,7 +564,8 @@ void play_init(play_state_t *state, const char *song_path, const char *song_titl
         derive_song_title(state->song_title, state->song_path);
     state->selected = 0;
     state->select_mode = 0;
-    state->is_playing = 1;
+    state->is_playing = 0;
+    state->has_started_once = 0;
     state->ignore_initial_play = 1;
     state->prev_rot_down = 0;
     state->prev_play_down = 0;
@@ -577,7 +607,7 @@ void play_init(play_state_t *state, const char *song_path, const char *song_titl
     else g_song_tpq = 480;
 
     atomic_store(&g_bpm_atomic, state->bpm);
-    atomic_store(&g_backing_paused, 0);
+    atomic_store(&g_backing_paused, 1);
     atomic_store(&g_backing_restart, 1);
 
     play_audio_start(state);
@@ -617,7 +647,7 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
             state->ignore_initial_play = 0;
     }
 
-    const int play_enabled = state->select_mode ? 0 : 1;
+    const int play_enabled = (state->is_playing && !state->select_mode) ? 1 : 0;
     const int play_down_for_logic = play_enabled ? play_down_effective : 0;
 
     const int rot_pressed = (in.rot_down && !state->prev_rot_down) ? 1 : 0;
@@ -636,36 +666,60 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
         if (rot_pressed)
         {
             state->select_mode = 0;
-            state->is_playing = 1; // "restart play session"
-            state->step_index = 0;
-            state->scroll_accum = 0.0f;
-            memset(state->history_cols, 0, sizeof(state->history_cols));
-            atomic_store(&g_backing_paused, 0);
-            atomic_store(&g_backing_restart, 1);
+            state->is_playing = 0; // leave edit mode in stopped state
+            state->selected = 0;   // return focus to PS
+            atomic_store(&g_backing_paused, 1);
             play_audio_all_off();
-            if (state->prev_play_down)
-                play_audio_note_on(state);
         }
     }
     else
     {
-        state->selected += in.rot_dr;
-        state->selected -= in.rot_dl;
-        state->selected = clampi(state->selected, 0, 1);
-
-        if (rot_pressed)
+        if (state->is_playing)
         {
-            if (state->selected == 0)
+            // While running, rotary turns are ignored; only SS can be selected.
+            state->selected = 0;
+            if (rot_pressed)
             {
-                state->is_playing = 0;   // "turn the song off"
-                state->select_mode = 1;  // enter BPM edit mode
+                state->is_playing = 0;
                 atomic_store(&g_backing_paused, 1);
                 play_audio_all_off();
             }
-            else
+        }
+        else
+        {
+            // While stopped, rotary can navigate PS/BPM/X.
+            state->selected += in.rot_dr;
+            state->selected -= in.rot_dl;
+            state->selected = clampi(state->selected, 0, 2);
+
+            if (rot_pressed)
             {
-                play_audio_all_off();
-                return PLAY_ACTION_EXIT_TO_MENU;
+                if (state->selected == 0)
+                {
+                    // PS: start (restart) session
+                    state->is_playing = 1;
+                    state->has_started_once = 1;
+                    state->step_index = 0;
+                    state->scroll_accum = 0.0f;
+                    memset(state->history_cols, 0, sizeof(state->history_cols));
+                    atomic_store(&g_backing_paused, 0);
+                    atomic_store(&g_backing_restart, 1);
+                    play_audio_all_off();
+                    if (state->prev_play_down)
+                        play_audio_note_on(state);
+                }
+                else if (state->selected == 1)
+                {
+                    // BPM edit
+                    state->select_mode = 1;
+                    atomic_store(&g_backing_paused, 1);
+                    play_audio_all_off();
+                }
+                else
+                {
+                    play_audio_all_off();
+                    return PLAY_ACTION_EXIT_TO_MENU;
+                }
             }
         }
     }
@@ -722,6 +776,8 @@ void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
     int right_x;
     int title_max_px;
     int title_max_chars;
+    int transport_y = play_y + 2;
+    int transport_x = pad_l;
 
     memset(fb, 0, (size_t)((width * height) / 8));
     draw_rect(fb, width, height, 0, 0, width, height);
@@ -732,12 +788,12 @@ void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
 #endif
 
     snprintf(bpm_inner, sizeof(bpm_inner), "%3dBPM", state->bpm);
-    if (state->selected == 0)
+    if (state->selected == 1)
         snprintf(bpm_field, sizeof(bpm_field), "[%s]", bpm_inner);
     else
         snprintf(bpm_field, sizeof(bpm_field), " %s ", bpm_inner); // invisible brackets keep width
 
-    if (state->selected == 1)
+    if (state->selected == 2)
         snprintf(x_field, sizeof(x_field), "[X]");
     else
         snprintf(x_field, sizeof(x_field), " X "); // invisible brackets keep width
@@ -754,6 +810,24 @@ void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
     if (title_max_chars >= SONG_NAME_MAX) title_max_chars = SONG_NAME_MAX - 1;
     snprintf(title_label, sizeof(title_label), "%.*s", title_max_chars, state->song_title);
     draw_text_5x7(fb, width, height, pad_l, demo_y, title_label);
+
+    // Transport icon in top-left of play area: play triangle when stopped, pause bars when running.
+    draw_transport_icon(fb, width, height, transport_x, transport_y, state->is_playing ? 0 : 1, state->selected == 0);
+
+    // One-time onboarding prompt until first PS click.
+    if (!state->has_started_once && !state->is_playing)
+    {
+        const int click_w = text_width_5x7("CLICK");
+        const int play_w = text_width_5x7("PLAY");
+        const int block_w = (click_w > play_w) ? click_w : play_w;
+        const int block_h = 7 + 2 + 7;
+        const int tx_click = (width - click_w) / 2;
+        const int tx_play = (width - play_w) / 2;
+        const int ty = play_y + (play_h - block_h) / 2;
+        draw_text_5x7(fb, width, height, tx_click, ty, "CLICK");
+        draw_text_5x7(fb, width, height, tx_play, ty + 9, "PLAY");
+        (void)block_w;
+    }
 
     // Historical play-state scroll, right-to-left.
     {
@@ -787,8 +861,4 @@ void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
         }
     }
 
-    if (state->is_playing)
-        draw_filled_rect(fb, width, height, 2, play_y + 2, 3, 3);
-    else
-        draw_rect(fb, width, height, 2, play_y + 2, 3, 3);
 }
