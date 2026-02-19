@@ -1,5 +1,5 @@
 CC := cc
-CFLAGS := -std=c11 -Wall -Wextra -pedantic
+CFLAGS := -std=c11 -Wall -Wextra -pedantic -Iinc
 
 RAYLIB_CFLAGS := $(shell pkg-config --cflags raylib 2>/dev/null)
 RAYLIB_LIBS := $(shell pkg-config --libs raylib 2>/dev/null)
@@ -11,7 +11,7 @@ endif
 
 LDFLAGS := $(RAYLIB_LIBS) -lm
 
-SRC := write_splash.c
+SRC := src/write_splash.c src/inputs.c src/intro_animation.c
 BIN := splash_viewer
 
 .PHONY: install-deps build run clean
