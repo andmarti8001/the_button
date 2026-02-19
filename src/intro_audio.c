@@ -22,6 +22,7 @@ typedef struct {
     int tpq;
     int bpm;
     int finished;
+    float env;
     _Atomic int restart_req;
 } intro_audio_state_t;
 
@@ -32,6 +33,7 @@ static void intro_audio_reset_playhead(void)
     g_intro.cursor = 0;
     g_intro.tick_q16 = 0;
     g_intro.finished = 0;
+    g_intro.env = 0.0f;
     synth_all_notes_off(&g_intro.synth);
 }
 
@@ -64,6 +66,8 @@ static void intro_audio_callback(void *buffer_data, unsigned int frames)
     for (unsigned int i = 0; i < frames; i++)
     {
         float s;
+        const float attack_step = 0.95f / (0.05f * (float)INTRO_AUDIO_SAMPLE_RATE);
+        const float release_step = 0.95f / (0.10f * (float)INTRO_AUDIO_SAMPLE_RATE);
 
         if (!g_intro.finished)
         {
@@ -74,7 +78,18 @@ static void intro_audio_callback(void *buffer_data, unsigned int frames)
             g_intro.tick_q16 += delta_q16;
         }
 
-        s = synth_next_sample(&g_intro.synth) * 0.55f;
+        if (!g_intro.finished)
+        {
+            g_intro.env += attack_step;
+            if (g_intro.env > 0.95f) g_intro.env = 0.95f;
+        }
+        else
+        {
+            g_intro.env -= release_step;
+            if (g_intro.env < 0.0f) g_intro.env = 0.0f;
+        }
+
+        s = synth_next_sample(&g_intro.synth) * g_intro.env * 0.90f;
         s = tremolo_process(&g_intro.trem, s);
         if (s > 0.95f) s = 0.95f;
         if (s < -0.95f) s = -0.95f;
@@ -117,7 +132,10 @@ int intro_audio_start(void)
         InitAudioDevice();
 
     synth_init(&g_intro.synth, INTRO_AUDIO_SAMPLE_RATE);
-    synth_set_default_wave(&g_intro.synth, SYNTH_WAVE_SINE, 1.0f);
+    synth_set_default_wave(&g_intro.synth, SYNTH_WAVE_TRIANGLE, 1.0f);
+    g_intro.synth.attack_seconds = 0.05f;
+    g_intro.synth.release_seconds = 0.10f;
+    g_intro.synth.sustain_level = 0.95f;
     tremolo_init(&g_intro.trem, INTRO_AUDIO_SAMPLE_RATE, 6.5f, 0.45f);
     intro_audio_reset_playhead();
 

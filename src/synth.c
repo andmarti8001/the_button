@@ -59,21 +59,35 @@ void synth_set_default_wave(synth_t *synth, synth_wave_t wave, float drive)
 void synth_note_on(synth_t *synth, uint8_t note, synth_wave_t wave, float drive)
 {
     int idx = -1;
+    int free_idx = -1;
+    int releasing_same_note_idx = -1;
     for (int i = 0; i < synth->max_voices; i++)
     {
-        if (synth->voices[i].active && synth->voices[i].note == note)
+        synth_voice_t *v = &synth->voices[i];
+
+        // If this exact note is already sounding, keep it gated on.
+        // This avoids hard re-trigger discontinuities (audible clicks).
+        if (v->active && v->gate_on && v->note == note)
         {
-            idx = i;
-            break;
+            v->wave = wave;
+            v->drive = drive;
+            return;
         }
-        if (idx < 0 && !synth->voices[i].active)
-            idx = i;
+
+        if (releasing_same_note_idx < 0 && v->active && !v->gate_on && v->note == note)
+            releasing_same_note_idx = i;
+        if (free_idx < 0 && !v->active)
+            free_idx = i;
     }
-    if (idx < 0) idx = 0; // voice steal
+
+    if (releasing_same_note_idx >= 0) idx = releasing_same_note_idx;
+    else if (free_idx >= 0) idx = free_idx;
+    else idx = 0; // voice steal
 
     synth_voice_t *v = &synth->voices[idx];
     const float freq = midi_note_to_freq(note);
     v->note = note;
+    v->phase = 0.0f; // Start at zero crossing to reduce note-on click.
     v->phase_step = (2.0f * SYNTH_PI * freq) / (float)synth->sample_rate;
     v->active = 1;
     v->gate_on = 1;
