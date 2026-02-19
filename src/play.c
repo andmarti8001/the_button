@@ -706,13 +706,22 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
 
 void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
 {
-    char bpm_label[24];
+    char bpm_inner[16];
+    char bpm_field[24];
+    char x_field[8];
+    char right_block[48];
     char title_label[SONG_NAME_MAX];
     const int top_h = (height * 20) / 100;
     const int play_y = top_h;
     const int play_h = height - play_y;
     const int demo_y = (top_h - 7) / 2;
     const int top_mid_y = demo_y;
+    const int pad_l = clampi(width / 20, 0, width / 2);
+    const int pad_r = clampi(width / 20, 0, width / 2);
+    int right_w;
+    int right_x;
+    int title_max_px;
+    int title_max_chars;
 
     memset(fb, 0, (size_t)((width * height) / 8));
     draw_rect(fb, width, height, 0, 0, width, height);
@@ -722,19 +731,29 @@ void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
     draw_dotted_rect(fb, width, height, 0, play_y, width, play_h);
 #endif
 
-    snprintf(title_label, sizeof(title_label), "%.8s", state->song_title);
-    draw_text_5x7(fb, width, height, 3, demo_y, title_label);
-
+    snprintf(bpm_inner, sizeof(bpm_inner), "%3dBPM", state->bpm);
     if (state->selected == 0)
-        snprintf(bpm_label, sizeof(bpm_label), "[%d BPM]", state->bpm);
+        snprintf(bpm_field, sizeof(bpm_field), "[%s]", bpm_inner);
     else
-        snprintf(bpm_label, sizeof(bpm_label), "%d BPM", state->bpm);
-    draw_text_5x7(fb, width, height, (width - text_width_5x7(bpm_label)) / 2, top_mid_y, bpm_label);
+        snprintf(bpm_field, sizeof(bpm_field), " %s ", bpm_inner); // invisible brackets keep width
 
     if (state->selected == 1)
-        draw_text_5x7(fb, width, height, width - text_width_5x7("[X]") - 3, top_mid_y, "[X]");
+        snprintf(x_field, sizeof(x_field), "[X]");
     else
-        draw_text_5x7(fb, width, height, width - text_width_5x7("X") - 3, top_mid_y, "X");
+        snprintf(x_field, sizeof(x_field), " X "); // invisible brackets keep width
+
+    snprintf(right_block, sizeof(right_block), "%s %s", bpm_field, x_field);
+    right_w = text_width_5x7(right_block);
+    right_x = width - pad_r - right_w;
+    if (right_x < 0) right_x = 0;
+    draw_text_5x7(fb, width, height, right_x, top_mid_y, right_block);
+
+    title_max_px = right_x - pad_l - 6; // one space between title and right block
+    title_max_chars = (title_max_px + 1) / 6;
+    if (title_max_chars < 0) title_max_chars = 0;
+    if (title_max_chars >= SONG_NAME_MAX) title_max_chars = SONG_NAME_MAX - 1;
+    snprintf(title_label, sizeof(title_label), "%.*s", title_max_chars, state->song_title);
+    draw_text_5x7(fb, width, height, pad_l, demo_y, title_label);
 
     // Historical play-state scroll, right-to-left.
     {
