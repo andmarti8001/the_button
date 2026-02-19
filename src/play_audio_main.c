@@ -11,6 +11,10 @@
 #define PLAY_AUDIO_SAMPLE_RATE 48000
 #endif
 
+#ifndef LCD_DIAGONAL_INCHES
+#define LCD_DIAGONAL_INCHES 0.96f
+#endif
+
 #ifndef PLAY_AUDIO_TRACK_NAME
 #define PLAY_AUDIO_TRACK_NAME "lead"
 #endif
@@ -79,7 +83,7 @@ int main(void)
     }
 
     const float aspect = 128.0f / 64.0f;
-    const float lcd_h_inches = 0.96f / sqrtf((aspect * aspect) + 1.0f);
+    const float lcd_h_inches = LCD_DIAGONAL_INCHES / sqrtf((aspect * aspect) + 1.0f);
     const float lcd_w_inches = lcd_h_inches * aspect;
     const float host_ppi = get_monitor_ppi(0);
     const int win_w = (int)roundf(lcd_w_inches * host_ppi);

@@ -61,6 +61,14 @@ static int clampi(int v, int lo, int hi)
     return v;
 }
 
+static int wrapi(int v, int count)
+{
+    if (count <= 0) return 0;
+    while (v < 0) v += count;
+    while (v >= count) v -= count;
+    return v;
+}
+
 static void derive_song_title(char out[SONG_NAME_MAX], const char *path)
 {
     const char *name = path;
@@ -694,7 +702,7 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
             // While stopped, rotary can navigate PS/BPM/X.
             state->selected += in.rot_dr;
             state->selected -= in.rot_dl;
-            state->selected = clampi(state->selected, 0, 2);
+            state->selected = wrapi(state->selected, 3);
 
             if (rot_pressed)
             {
