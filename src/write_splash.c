@@ -297,6 +297,7 @@ int main(void)
     menu_state_t menu_state;
     menu_init(&menu_state);
     play_state_t play_state;
+    memset(&play_state, 0, sizeof(play_state));
     play_init(&play_state);
     app_state_t app_state = APP_SPLASH;
 
@@ -376,11 +377,14 @@ int main(void)
         }
         else
         {
-            const play_action_t play_action = play_update(&play_state, in);
+            const play_action_t play_action = play_update(&play_state, in, GetFrameTime(), FB_WIDTH, FB_HEIGHT);
             write_play(framebuffer, FB_WIDTH, FB_HEIGHT, &play_state);
 
             if (play_action == PLAY_ACTION_EXIT_TO_MENU)
+            {
+                play_deinit(&play_state);
                 app_state = APP_MENU;
+            }
         }
 
         fb_to_rgba(framebuffer, pixels);
@@ -399,6 +403,7 @@ int main(void)
         EndDrawing();
     }
 
+    play_deinit(&play_state);
     UnloadTexture(tex);
     CloseWindow();
     return 0;

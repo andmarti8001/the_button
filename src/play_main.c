@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <string.h>
 #include <math.h>
 #include <raylib.h>
 #include "play.h"
@@ -62,6 +63,7 @@ int main(void)
 {
     uint8_t framebuffer[FB_SIZE];
     play_state_t play_state;
+    memset(&play_state, 0, sizeof(play_state));
     play_init(&play_state);
 
     const float aspect = (float)FB_WIDTH / (float)FB_HEIGHT;
@@ -84,7 +86,7 @@ int main(void)
     while (!WindowShouldClose())
     {
         const input_poll_t in = input_poll();
-        const play_action_t action = play_update(&play_state, in);
+        const play_action_t action = play_update(&play_state, in, GetFrameTime(), FB_WIDTH, FB_HEIGHT);
         write_play(framebuffer, FB_WIDTH, FB_HEIGHT, &play_state);
 
         if (action == PLAY_ACTION_EXIT_TO_MENU)
@@ -106,6 +108,7 @@ int main(void)
         EndDrawing();
     }
 
+    play_deinit(&play_state);
     UnloadTexture(tex);
     CloseWindow();
     return 0;

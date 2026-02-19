@@ -7,6 +7,10 @@
 #define PLAY_DEBUG_OUTLINE 1
 #endif
 
+#ifndef PLAY_SCROLL_STEP_SECONDS
+#define PLAY_SCROLL_STEP_SECONDS 0.03f
+#endif
+
 #define PLAY_MIN_BPM 40
 #define PLAY_MAX_BPM 300
 
@@ -62,6 +66,16 @@ static void draw_filled_rect(uint8_t *fb, int width, int height, int x, int y, i
     if (w <= 0 || h <= 0) return;
     for (int yy = y; yy < (y + h); yy++)
         draw_hline(fb, width, height, x, x + w - 1, yy);
+}
+
+static void draw_dotted_hline(uint8_t *fb, int width, int height, int x0, int x1, int y)
+{
+    if (y < 0 || y >= height) return;
+    if (x0 > x1) { int t = x0; x0 = x1; x1 = t; }
+    x0 = clampi(x0, 0, width - 1);
+    x1 = clampi(x1, 0, width - 1);
+    for (int x = x0; x <= x1; x += 2)
+        set_pixel(fb, width, height, x, y);
 }
 
 static void draw_dotted_rect(uint8_t *fb, int width, int height, int x, int y, int w, int h)
@@ -166,19 +180,119 @@ static int text_width_5x7(const char *s)
     return (n > 0) ? (n * 6 - 1) : 0;
 }
 
+static int note_to_row(const play_state_t *state, int note, int play_h)
+{
+    if (play_h <= 1)
+        return 0;
+    if (state->note_max <= state->note_min)
+        return (play_h - 1) / 2;
+
+    const int num = (state->note_max - note) * (play_h - 1);
+    const int den = (state->note_max - state->note_min);
+    return clampi(num / den, 0, play_h - 1);
+}
+
+static uint64_t build_present_mask(const play_state_t *state, int play_h, int play_down)
+{
+    uint64_t mask = 0;
+    if (!play_down || !state->melody_loaded || state->melody.group_count <= 0)
+        return 0;
+
+    const midi_note_group_t *g = &state->melody.groups[state->step_index];
+    for (int i = 0; i < g->note_count; i++)
+    {
+        const int row = note_to_row(state, g->notes[i], play_h);
+        if (row >= 0 && row < 64)
+            mask |= ((uint64_t)1u << row);
+    }
+    return mask;
+}
+
+static void push_history(play_state_t *state, uint64_t mask, int width)
+{
+    const int w = clampi(width, 1, 128);
+    if (state->history_width != w)
+    {
+        state->history_width = w;
+        memset(state->history_cols, 0, sizeof(state->history_cols));
+    }
+
+    memmove(&state->history_cols[0], &state->history_cols[1], (size_t)(w - 1) * sizeof(uint64_t));
+    state->history_cols[w - 1] = mask;
+}
+
+static void analyze_melody_range(play_state_t *state)
+{
+    int min_note = 127;
+    int max_note = 0;
+    int found = 0;
+
+    for (int i = 0; i < state->melody.group_count; i++)
+    {
+        const midi_note_group_t *g = &state->melody.groups[i];
+        for (int n = 0; n < g->note_count; n++)
+        {
+            const int note = g->notes[n];
+            if (note < min_note) min_note = note;
+            if (note > max_note) max_note = note;
+            found = 1;
+        }
+    }
+
+    if (!found)
+    {
+        state->note_min = 60;
+        state->note_max = 72;
+    }
+    else
+    {
+        state->note_min = min_note;
+        state->note_max = max_note;
+    }
+}
+
 void play_init(play_state_t *state)
 {
+    play_deinit(state);
     state->bpm = 120;
     state->selected = 0;
     state->select_mode = 0;
     state->is_playing = 1;
     state->prev_rot_down = 0;
+    state->prev_play_down = 0;
+    state->note_min = 60;
+    state->note_max = 72;
+    state->step_index = 0;
+    state->scroll_accum = 0.0f;
+    state->history_width = 0;
+    memset(state->history_cols, 0, sizeof(state->history_cols));
+
+    if (midi_extract_track_notes("songs/demo.mid", "lead", &state->melody) == 0 && state->melody.group_count > 0)
+    {
+        state->melody_loaded = 1;
+        analyze_melody_range(state);
+    }
+    else
+    {
+        state->melody_loaded = 0;
+    }
 }
 
-play_action_t play_update(play_state_t *state, input_poll_t in)
+void play_deinit(play_state_t *state)
+{
+    if (state->melody_loaded)
+        midi_free_note_sequence(&state->melody);
+    memset(&state->melody, 0, sizeof(state->melody));
+    state->melody_loaded = 0;
+}
+
+play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds, int width, int height)
 {
     const int rot_pressed = (in.rot_down && !state->prev_rot_down) ? 1 : 0;
+    const int play_pressed = (in.play_down && !state->prev_play_down) ? 1 : 0;
+    const int play_released = (!in.play_down && state->prev_play_down) ? 1 : 0;
     state->prev_rot_down = in.rot_down ? 1 : 0;
+    state->prev_play_down = in.play_down ? 1 : 0;
 
     if (state->select_mode)
     {
@@ -191,24 +305,54 @@ play_action_t play_update(play_state_t *state, input_poll_t in)
             state->select_mode = 0;
             state->is_playing = 1; // "restart play session"
         }
-        return PLAY_ACTION_NONE;
     }
-
-    state->selected += in.rot_dr;
-    state->selected -= in.rot_dl;
-    state->selected = clampi(state->selected, 0, 1);
-
-    if (!rot_pressed)
-        return PLAY_ACTION_NONE;
-
-    if (state->selected == 0)
+    else
     {
-        state->is_playing = 0;   // "turn the song off"
-        state->select_mode = 1;  // enter BPM edit mode
-        return PLAY_ACTION_NONE;
+        state->selected += in.rot_dr;
+        state->selected -= in.rot_dl;
+        state->selected = clampi(state->selected, 0, 1);
+
+        if (rot_pressed)
+        {
+            if (state->selected == 0)
+            {
+                state->is_playing = 0;   // "turn the song off"
+                state->select_mode = 1;  // enter BPM edit mode
+            }
+            else
+            {
+                return PLAY_ACTION_EXIT_TO_MENU;
+            }
+        }
     }
 
-    return PLAY_ACTION_EXIT_TO_MENU;
+    if (state->melody_loaded && state->melody.group_count > 0)
+    {
+        if (play_pressed)
+            state->is_playing = 1;
+
+        if (play_released)
+        {
+            state->step_index++;
+            if (state->step_index >= state->melody.group_count)
+                state->step_index = 0;
+        }
+    }
+
+    {
+        const int top_h = (height * 20) / 100;
+        const int play_h = height - top_h;
+        uint64_t present_mask = build_present_mask(state, play_h, in.play_down);
+        state->scroll_accum += dt_seconds;
+
+        while (state->scroll_accum >= PLAY_SCROLL_STEP_SECONDS)
+        {
+            push_history(state, present_mask, width);
+            state->scroll_accum -= PLAY_SCROLL_STEP_SECONDS;
+        }
+    }
+
+    return PLAY_ACTION_NONE;
 }
 
 void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
@@ -240,6 +384,47 @@ void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
         draw_text_5x7(fb, width, height, width - text_width_5x7("[X]") - 3, top_mid_y, "[X]");
     else
         draw_text_5x7(fb, width, height, width - text_width_5x7("X") - 3, top_mid_y, "X");
+
+    // Historical play-state scroll, right-to-left.
+    {
+        const int w = clampi(state->history_width, 0, width);
+        for (int x = 0; x < w; x++)
+        {
+            const uint64_t col = state->history_cols[x];
+            for (int row = 0; row < play_h && row < 64; row++)
+            {
+                if (col & ((uint64_t)1u << row))
+                    set_pixel(fb, width, height, x, play_y + row);
+            }
+        }
+    }
+
+    // Optional melody range guides (dotted).
+    if (state->melody_loaded && state->note_max >= state->note_min)
+    {
+        const int top_row = note_to_row(state, state->note_max, play_h);
+        const int bot_row = note_to_row(state, state->note_min, play_h);
+        draw_dotted_hline(fb, width, height, 0, width - 1, play_y + top_row);
+        draw_dotted_hline(fb, width, height, 0, width - 1, play_y + bot_row);
+    }
+
+    // Right wall "present state" arrow indicator on active note lines.
+    if (state->melody_loaded && state->melody.group_count > 0 && state->prev_play_down)
+    {
+        const uint64_t mask = build_present_mask(state, play_h, 1);
+        for (int row = 0; row < play_h && row < 64; row++)
+        {
+            if (mask & ((uint64_t)1u << row))
+            {
+                const int y = play_y + row;
+                set_pixel(fb, width, height, width - 1, y);
+                set_pixel(fb, width, height, width - 2, y - 1);
+                set_pixel(fb, width, height, width - 2, y);
+                set_pixel(fb, width, height, width - 2, y + 1);
+                set_pixel(fb, width, height, width - 3, y);
+            }
+        }
+    }
 
     if (state->is_playing)
         draw_filled_rect(fb, width, height, 2, play_y + 2, 3, 3);
