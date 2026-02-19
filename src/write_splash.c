@@ -296,6 +296,8 @@ int main(void)
     draw_splash(splash_fb);
     menu_state_t menu_state;
     menu_init(&menu_state);
+    play_state_t play_state;
+    play_init(&play_state);
     app_state_t app_state = APP_SPLASH;
 
     const float aspect = (float)FB_WIDTH / (float)FB_HEIGHT;
@@ -362,7 +364,10 @@ int main(void)
             write_menu(framebuffer, FB_WIDTH, FB_HEIGHT, &menu_state);
 
             if (action == MENU_ACTION_DEMO)
+            {
+                play_init(&play_state);
                 app_state = APP_PLAY;
+            }
             else if (action == MENU_ACTION_EXIT)
             {
                 app_state = APP_SPLASH;
@@ -371,7 +376,11 @@ int main(void)
         }
         else
         {
-            write_play(framebuffer, FB_WIDTH, FB_HEIGHT);
+            const play_action_t play_action = play_update(&play_state, in);
+            write_play(framebuffer, FB_WIDTH, FB_HEIGHT, &play_state);
+
+            if (play_action == PLAY_ACTION_EXIT_TO_MENU)
+                app_state = APP_MENU;
         }
 
         fb_to_rgba(framebuffer, pixels);
