@@ -64,7 +64,7 @@ int main(void)
     uint8_t framebuffer[FB_SIZE];
     play_state_t play_state;
     memset(&play_state, 0, sizeof(play_state));
-    play_init(&play_state);
+    play_init(&play_state, "assets/songs/demo.mid", "DEMO");
 
     const float aspect = (float)FB_WIDTH / (float)FB_HEIGHT;
     const float lcd_h_inches = LCD_DIAGONAL_INCHES / sqrtf((aspect * aspect) + 1.0f);

@@ -2,12 +2,19 @@
 #include <string.h>
 #include "menu.h"
 
-static const char *k_menu_items[] = {
-    "DEMO",
-    "EXIT"
-};
+static int menu_item_count(const menu_state_t *state)
+{
+    const int songs = (state->songs) ? state->songs->count : 0;
+    return songs + 1; // + EXIT
+}
 
-#define MENU_ITEM_COUNT ((int)(sizeof(k_menu_items) / sizeof(k_menu_items[0])))
+static const char *menu_item_label(const menu_state_t *state, int idx)
+{
+    const int songs = (state->songs) ? state->songs->count : 0;
+    if (idx < songs)
+        return state->songs->entries[idx].name;
+    return "EXIT";
+}
 
 static int clampi(int v, int lo, int hi)
 {
@@ -151,32 +158,36 @@ static int text_width_5x7(const char *s)
     return (n > 0) ? (n * 6 - 1) : 0;
 }
 
-void menu_init(menu_state_t *state)
+void menu_init(menu_state_t *state, const song_library_t *songs)
 {
+    state->songs = songs;
     state->selected = 0;
     state->scroll_top = 0;
+    state->selected_song_index = -1;
     state->prev_select_down = 0;
 }
 
 menu_action_t menu_update(menu_state_t *state, input_poll_t in)
 {
+    const int item_count = menu_item_count(state);
+
     for (int i = 0; i < in.rot_dl; i++)
         state->selected--;
     for (int i = 0; i < in.rot_dr; i++)
         state->selected++;
 
-    state->selected = clampi(state->selected, 0, MENU_ITEM_COUNT - 1);
+    state->selected = clampi(state->selected, 0, item_count - 1);
 
     const int list_y = 16;
     const int row_h = 9;
-    const int visible_rows = clampi((64 - list_y - 2) / row_h, 1, MENU_ITEM_COUNT);
+    const int visible_rows = clampi((64 - list_y - 2) / row_h, 1, item_count);
 
     if (state->selected < state->scroll_top)
         state->scroll_top = state->selected;
     if (state->selected >= (state->scroll_top + visible_rows))
         state->scroll_top = state->selected - visible_rows + 1;
 
-    const int max_top = MENU_ITEM_COUNT - visible_rows;
+    const int max_top = item_count - visible_rows;
     state->scroll_top = clampi(state->scroll_top, 0, (max_top > 0) ? max_top : 0);
 
     const int select_down = (in.rot_down || in.play_down) ? 1 : 0;
@@ -186,11 +197,11 @@ menu_action_t menu_update(menu_state_t *state, input_poll_t in)
     if (!select_pressed)
         return MENU_ACTION_NONE;
 
-    if (state->selected == 0)
-        return MENU_ACTION_DEMO;
-    if (state->selected == 1)
+    if (state->selected >= ((state->songs) ? state->songs->count : 0))
         return MENU_ACTION_EXIT;
-    return MENU_ACTION_NONE;
+
+    state->selected_song_index = state->selected;
+    return MENU_ACTION_PLAY_SONG;
 }
 
 void write_menu(uint8_t *fb, int width, int height, const menu_state_t *state)
@@ -202,16 +213,17 @@ void write_menu(uint8_t *fb, int width, int height, const menu_state_t *state)
     const int list_x = 8;
     const int list_y = 16;
     const int row_h = 9;
-    const int visible_rows = clampi((height - list_y - 2) / row_h, 1, MENU_ITEM_COUNT);
+    const int item_count = menu_item_count(state);
+    const int visible_rows = clampi((height - list_y - 2) / row_h, 1, item_count);
 
     for (int row = 0; row < visible_rows; row++)
     {
         const int idx = state->scroll_top + row;
-        if (idx >= MENU_ITEM_COUNT)
+        if (idx >= item_count)
             break;
 
         const int y = list_y + row * row_h;
-        const char *label = k_menu_items[idx];
+        const char *label = menu_item_label(state, idx);
         draw_text_5x7(fb, width, height, list_x, y, label);
 
         if (idx == state->selected)

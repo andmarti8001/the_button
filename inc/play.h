@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "input_poll.h"
 #include "midi_lead.h"
+#include "song_library.h"
 
 typedef enum {
     PLAY_ACTION_NONE = 0,
@@ -11,6 +12,8 @@ typedef enum {
 } play_action_t;
 
 typedef struct {
+    char song_path[SONG_PATH_MAX];
+    char song_title[SONG_NAME_MAX];
     int bpm;
     int selected;      // 0 = BPM, 1 = X
     int select_mode;   // 1 while editing BPM
@@ -32,7 +35,7 @@ typedef struct {
     int history_width;
 } play_state_t;
 
-void play_init(play_state_t *state);
+void play_init(play_state_t *state, const char *song_path, const char *song_title);
 void play_deinit(play_state_t *state);
 play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds, int width, int height);
 void write_play(uint8_t *fb, int width, int height, const play_state_t *state);

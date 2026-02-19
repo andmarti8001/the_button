@@ -8,6 +8,7 @@
 #include "intro_audio.h"
 #include "menu.h"
 #include "play.h"
+#include "song_library.h"
 
 #ifndef FB_WIDTH
 #define FB_WIDTH 128
@@ -296,7 +297,10 @@ int main(void)
     uint8_t splash_fb[FB_SIZE];
     draw_splash(splash_fb);
     menu_state_t menu_state;
-    menu_init(&menu_state);
+    song_library_t song_library;
+    if (song_library_load(&song_library, "assets/songs") != 0 || song_library.count == 0)
+        song_library_load(&song_library, "songs");
+    menu_init(&menu_state, &song_library);
     play_state_t play_state;
     memset(&play_state, 0, sizeof(play_state));
     app_state_t app_state = APP_SPLASH;
@@ -357,7 +361,7 @@ int main(void)
             if (select_pressed)
             {
                 intro_audio_stop();
-                menu_init(&menu_state);
+                menu_init(&menu_state, &song_library);
                 menu_state.prev_select_down = select_down;
                 app_state = APP_MENU;
             }
@@ -367,10 +371,14 @@ int main(void)
             const menu_action_t action = menu_update(&menu_state, in);
             write_menu(framebuffer, FB_WIDTH, FB_HEIGHT, &menu_state);
 
-            if (action == MENU_ACTION_DEMO)
+            if (action == MENU_ACTION_PLAY_SONG)
             {
-                play_init(&play_state);
-                app_state = APP_PLAY;
+                const int idx = menu_state.selected_song_index;
+                if (idx >= 0 && idx < song_library.count)
+                {
+                    play_init(&play_state, song_library.entries[idx].path, song_library.entries[idx].name);
+                    app_state = APP_PLAY;
+                }
             }
             else if (action == MENU_ACTION_EXIT)
             {

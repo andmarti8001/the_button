@@ -61,6 +61,28 @@ static int clampi(int v, int lo, int hi)
     return v;
 }
 
+static void derive_song_title(char out[SONG_NAME_MAX], const char *path)
+{
+    const char *name = path;
+    int j = 0;
+    for (const char *p = path; *p; p++)
+    {
+        if (*p == '/' || *p == '\\')
+            name = p + 1;
+    }
+    for (int i = 0; name[i] && j < (SONG_NAME_MAX - 1); i++)
+    {
+        char c = name[i];
+        if (c == '.') break;
+        if (c == '_' || c == '-') c = ' ';
+        if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+        out[j++] = c;
+    }
+    out[j] = '\0';
+    if (out[0] == '\0')
+        snprintf(out, SONG_NAME_MAX, "SONG");
+}
+
 static void set_pixel(uint8_t *fb, int width, int height, int x, int y)
 {
     if (x < 0 || x >= width || y < 0 || y >= height)
@@ -140,12 +162,30 @@ static const uint8_t *glyph_5x7(char c)
     static const uint8_t g_9[5] = {0x30,0x49,0x49,0x4A,0x3C};
     static const uint8_t g_a[5] = {0x1F,0x24,0x44,0x24,0x1F};
     static const uint8_t g_b[5] = {0x7F,0x49,0x49,0x49,0x36};
+    static const uint8_t g_c[5] = {0x3E,0x41,0x41,0x41,0x22};
     static const uint8_t g_d[5] = {0x7F,0x41,0x41,0x22,0x1C};
     static const uint8_t g_e[5] = {0x7F,0x49,0x49,0x49,0x41};
+    static const uint8_t g_f[5] = {0x7F,0x48,0x48,0x48,0x40};
+    static const uint8_t g_g[5] = {0x3E,0x41,0x45,0x45,0x26};
+    static const uint8_t g_h[5] = {0x7F,0x08,0x08,0x08,0x7F};
+    static const uint8_t g_i[5] = {0x00,0x41,0x7F,0x41,0x00};
+    static const uint8_t g_j[5] = {0x02,0x01,0x01,0x01,0x7E};
+    static const uint8_t g_k[5] = {0x7F,0x08,0x14,0x22,0x41};
+    static const uint8_t g_l[5] = {0x7F,0x01,0x01,0x01,0x01};
     static const uint8_t g_m[5] = {0x7F,0x20,0x10,0x20,0x7F};
+    static const uint8_t g_n[5] = {0x7F,0x10,0x08,0x04,0x7F};
     static const uint8_t g_o[5] = {0x3E,0x41,0x41,0x41,0x3E};
     static const uint8_t g_p[5] = {0x7F,0x48,0x48,0x48,0x30};
+    static const uint8_t g_q[5] = {0x3E,0x41,0x45,0x42,0x3D};
+    static const uint8_t g_r[5] = {0x7F,0x48,0x4C,0x4A,0x31};
+    static const uint8_t g_s[5] = {0x31,0x49,0x49,0x49,0x46};
+    static const uint8_t g_t[5] = {0x40,0x40,0x7F,0x40,0x40};
+    static const uint8_t g_u[5] = {0x7E,0x01,0x01,0x01,0x7E};
+    static const uint8_t g_v[5] = {0x7C,0x02,0x01,0x02,0x7C};
+    static const uint8_t g_w[5] = {0x7E,0x01,0x0E,0x01,0x7E};
     static const uint8_t g_x[5] = {0x63,0x14,0x08,0x14,0x63};
+    static const uint8_t g_y[5] = {0x70,0x08,0x07,0x08,0x70};
+    static const uint8_t g_z[5] = {0x43,0x45,0x49,0x51,0x61};
     static const uint8_t g_lbr[5] = {0x00,0x7F,0x41,0x41,0x00};
     static const uint8_t g_rbr[5] = {0x00,0x41,0x41,0x7F,0x00};
 
@@ -166,12 +206,30 @@ static const uint8_t *glyph_5x7(char c)
         case '9': return g_9;
         case 'A': return g_a;
         case 'B': return g_b;
+        case 'C': return g_c;
         case 'D': return g_d;
         case 'E': return g_e;
+        case 'F': return g_f;
+        case 'G': return g_g;
+        case 'H': return g_h;
+        case 'I': return g_i;
+        case 'J': return g_j;
+        case 'K': return g_k;
+        case 'L': return g_l;
         case 'M': return g_m;
+        case 'N': return g_n;
         case 'O': return g_o;
         case 'P': return g_p;
+        case 'Q': return g_q;
+        case 'R': return g_r;
+        case 'S': return g_s;
+        case 'T': return g_t;
+        case 'U': return g_u;
+        case 'V': return g_v;
+        case 'W': return g_w;
         case 'X': return g_x;
+        case 'Y': return g_y;
+        case 'Z': return g_z;
         case '[': return g_lbr;
         case ']': return g_rbr;
         default: return g_space;
@@ -464,12 +522,17 @@ static void play_audio_all_off(void)
     atomic_store(&g_audio_cmd, PLAY_AUDIO_CMD_ALL_OFF);
 }
 
-void play_init(play_state_t *state)
+void play_init(play_state_t *state, const char *song_path, const char *song_title)
 {
     int song_bpm = 120;
 
     play_deinit(state);
     state->bpm = 120;
+    snprintf(state->song_path, sizeof(state->song_path), "%s", (song_path && song_path[0]) ? song_path : "assets/songs/demo.mid");
+    if (song_title && song_title[0])
+        snprintf(state->song_title, sizeof(state->song_title), "%s", song_title);
+    else
+        derive_song_title(state->song_title, state->song_path);
     state->selected = 0;
     state->select_mode = 0;
     state->is_playing = 1;
@@ -488,7 +551,7 @@ void play_init(play_state_t *state)
     memset(&g_backing_hardp, 0, sizeof(g_backing_hardp));
     memset(&g_backing_bass, 0, sizeof(g_backing_bass));
 
-    if (midi_extract_track_notes("assets/songs/demo.mid", "lead", &state->melody) == 0 && state->melody.group_count > 0)
+    if (midi_extract_track_notes(state->song_path, "lead", &state->melody) == 0 && state->melody.group_count > 0)
     {
         state->melody_loaded = 1;
         analyze_melody_range(state);
@@ -498,14 +561,14 @@ void play_init(play_state_t *state)
         state->melody_loaded = 0;
     }
 
-    if (midi_extract_song_bpm("assets/songs/demo.mid", &song_bpm) == 0)
+    if (midi_extract_song_bpm(state->song_path, &song_bpm) == 0)
         state->bpm = clampi(song_bpm, PLAY_MIN_BPM, PLAY_MAX_BPM);
 
-    if (midi_extract_track_note_events("assets/songs/demo.mid", "soft_p", &g_backing_softp.midi) == 0)
+    if (midi_extract_track_note_events(state->song_path, "soft_p", &g_backing_softp.midi) == 0)
         g_backing_softp.loaded = 1;
-    if (midi_extract_track_note_events("assets/songs/demo.mid", "hard_p", &g_backing_hardp.midi) == 0)
+    if (midi_extract_track_note_events(state->song_path, "hard_p", &g_backing_hardp.midi) == 0)
         g_backing_hardp.loaded = 1;
-    if (midi_extract_track_note_events("assets/songs/demo.mid", "bass", &g_backing_bass.midi) == 0)
+    if (midi_extract_track_note_events(state->song_path, "bass", &g_backing_bass.midi) == 0)
         g_backing_bass.loaded = 1;
 
     if (g_backing_softp.loaded) g_song_tpq = g_backing_softp.midi.ticks_per_quarter;
@@ -644,6 +707,7 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
 void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
 {
     char bpm_label[24];
+    char title_label[SONG_NAME_MAX];
     const int top_h = (height * 20) / 100;
     const int play_y = top_h;
     const int play_h = height - play_y;
@@ -658,7 +722,8 @@ void write_play(uint8_t *fb, int width, int height, const play_state_t *state)
     draw_dotted_rect(fb, width, height, 0, play_y, width, play_h);
 #endif
 
-    draw_text_5x7(fb, width, height, 3, demo_y, "DEMO");
+    snprintf(title_label, sizeof(title_label), "%.8s", state->song_title);
+    draw_text_5x7(fb, width, height, 3, demo_y, title_label);
 
     if (state->selected == 0)
         snprintf(bpm_label, sizeof(bpm_label), "[%d BPM]", state->bpm);

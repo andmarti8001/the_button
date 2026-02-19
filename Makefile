@@ -11,7 +11,7 @@ endif
 
 LDFLAGS := $(RAYLIB_LIBS) -lm
 
-SRC := src/write_splash.c src/inputs.c src/intro_animation.c src/intro_audio.c src/effects.c src/menu.c src/play.c src/midi_lead.c src/synth.c
+SRC := src/write_splash.c src/inputs.c src/intro_animation.c src/intro_audio.c src/effects.c src/menu.c src/play.c src/midi_lead.c src/synth.c src/song_library.c
 BIN := splash_viewer
 PLAY_SRC := src/play_main.c src/play.c src/inputs.c src/midi_lead.c src/synth.c
 PLAY_BIN := play_viewer
