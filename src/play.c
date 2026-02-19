@@ -637,12 +637,16 @@ void play_deinit(play_state_t *state)
 play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds, int width, int height)
 {
     int play_down_effective = in.play_down ? 1 : 0;
+    int rot_down_effective = in.rot_down ? 1 : 0;
 
-    // Ignore carry-over press when entering play mode from menu selection.
+    // Ignore carry-over select/press when entering play mode from menu selection.
     if (state->ignore_initial_play)
     {
-        if (in.play_down)
+        if (in.play_down || in.rot_down)
+        {
             play_down_effective = 0;
+            rot_down_effective = 0;
+        }
         else
             state->ignore_initial_play = 0;
     }
@@ -650,10 +654,10 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
     const int play_enabled = (state->is_playing && !state->select_mode) ? 1 : 0;
     const int play_down_for_logic = play_enabled ? play_down_effective : 0;
 
-    const int rot_pressed = (in.rot_down && !state->prev_rot_down) ? 1 : 0;
+    const int rot_pressed = (rot_down_effective && !state->prev_rot_down) ? 1 : 0;
     const int play_pressed = (play_down_for_logic && !state->prev_play_down) ? 1 : 0;
     const int play_released = (!play_down_for_logic && state->prev_play_down) ? 1 : 0;
-    state->prev_rot_down = in.rot_down ? 1 : 0;
+    state->prev_rot_down = rot_down_effective;
     state->prev_play_down = play_down_for_logic;
 
     if (state->select_mode)
