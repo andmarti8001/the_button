@@ -21,18 +21,37 @@
 #define PLAY_MIN_BPM 40
 #define PLAY_MAX_BPM 300
 
+typedef struct {
+    midi_track_events_t midi;
+    synth_t synth;
+    synth_wave_t wave;
+    float drive;
+    float gain;
+    int cursor;
+    int loaded;
+} backing_track_t;
+
 static AudioStream g_play_stream;
-static synth_t g_play_synth;
+static synth_t g_lead_synth;
+static backing_track_t g_backing_softp;
+static backing_track_t g_backing_hardp;
+static backing_track_t g_backing_bass;
+static uint32_t g_song_tick_q16 = 0;
+static int g_song_tpq = 480;
 static int g_play_stream_loaded = 0;
 static _Atomic int g_audio_cmd = 0;
 static _Atomic int g_note_count = 0;
 static _Atomic int g_note0 = 60;
 static _Atomic int g_note1 = 64;
+static _Atomic int g_backing_paused = 0;
+static _Atomic int g_backing_restart = 0;
+static _Atomic int g_bpm_atomic = 120;
 
 enum {
     PLAY_AUDIO_CMD_NONE = 0,
     PLAY_AUDIO_CMD_NOTE_ON,
-    PLAY_AUDIO_CMD_NOTE_OFF
+    PLAY_AUDIO_CMD_NOTE_OFF,
+    PLAY_AUDIO_CMD_ALL_OFF
 };
 
 static int clampi(int v, int lo, int hi)
@@ -269,10 +288,47 @@ static void analyze_melody_range(play_state_t *state)
     }
 }
 
+static void backing_track_reset(backing_track_t *trk)
+{
+    trk->cursor = 0;
+    synth_all_notes_off(&trk->synth);
+}
+
+static void backing_reset_all(void)
+{
+    g_song_tick_q16 = 0;
+    backing_track_reset(&g_backing_softp);
+    backing_track_reset(&g_backing_hardp);
+    backing_track_reset(&g_backing_bass);
+}
+
+static void backing_process_events(backing_track_t *trk, uint32_t tick)
+{
+    while (trk->loaded && trk->cursor < trk->midi.event_count && trk->midi.events[trk->cursor].tick <= tick)
+    {
+        const midi_note_event_t *e = &trk->midi.events[trk->cursor];
+        if (e->is_note_on)
+            synth_note_on(&trk->synth, e->note, trk->wave, trk->drive);
+        else
+            synth_note_off(&trk->synth, e->note);
+        trk->cursor++;
+    }
+}
+
+static int backing_all_finished(void)
+{
+    const int soft_done = (!g_backing_softp.loaded) || (g_backing_softp.cursor >= g_backing_softp.midi.event_count);
+    const int hard_done = (!g_backing_hardp.loaded) || (g_backing_hardp.cursor >= g_backing_hardp.midi.event_count);
+    const int bass_done = (!g_backing_bass.loaded) || (g_backing_bass.cursor >= g_backing_bass.midi.event_count);
+    return soft_done && hard_done && bass_done;
+}
+
 static void play_audio_callback(void *buffer_data, unsigned int frames)
 {
     float *out = (float *)buffer_data;
     const int cmd = atomic_exchange(&g_audio_cmd, PLAY_AUDIO_CMD_NONE);
+    const int paused = atomic_load(&g_backing_paused);
+    const int bpm = atomic_load(&g_bpm_atomic);
 
     if (cmd == PLAY_AUDIO_CMD_NOTE_ON)
     {
@@ -282,15 +338,54 @@ static void play_audio_callback(void *buffer_data, unsigned int frames)
         if (count > 2) count = 2;
         notes[0] = (uint8_t)atomic_load(&g_note0);
         notes[1] = (uint8_t)atomic_load(&g_note1);
-        synth_set_chord(&g_play_synth, notes, count);
+        synth_all_notes_off(&g_lead_synth);
+        for (int i = 0; i < count; i++)
+            synth_note_on(&g_lead_synth, notes[i], SYNTH_WAVE_TRIANGLE, 1.0f);
     }
     else if (cmd == PLAY_AUDIO_CMD_NOTE_OFF)
     {
-        synth_gate_off(&g_play_synth);
+        synth_all_notes_off(&g_lead_synth);
+    }
+    else if (cmd == PLAY_AUDIO_CMD_ALL_OFF)
+    {
+        synth_all_notes_off(&g_lead_synth);
+        synth_all_notes_off(&g_backing_softp.synth);
+        synth_all_notes_off(&g_backing_hardp.synth);
+        synth_all_notes_off(&g_backing_bass.synth);
     }
 
+    if (atomic_exchange(&g_backing_restart, 0))
+        backing_reset_all();
+
     for (unsigned int i = 0; i < frames; i++)
-        out[i] = synth_next_sample(&g_play_synth);
+    {
+        float mixed = 0.0f;
+        mixed += synth_next_sample(&g_lead_synth) * 0.90f;
+
+        if (!paused && g_song_tpq > 0 && bpm > 0)
+        {
+            const float ticks_per_sample = ((float)bpm * (float)g_song_tpq) / (60.0f * (float)PLAY_AUDIO_SAMPLE_RATE);
+            const uint32_t delta_q16 = (uint32_t)(ticks_per_sample * 65536.0f);
+            const uint32_t cur_tick = g_song_tick_q16 >> 16;
+
+            backing_process_events(&g_backing_softp, cur_tick);
+            backing_process_events(&g_backing_hardp, cur_tick);
+            backing_process_events(&g_backing_bass, cur_tick);
+
+            if (backing_all_finished())
+                backing_reset_all();
+
+            g_song_tick_q16 += delta_q16;
+        }
+
+        mixed += synth_next_sample(&g_backing_softp.synth) * g_backing_softp.gain;
+        mixed += synth_next_sample(&g_backing_hardp.synth) * g_backing_hardp.gain;
+        mixed += synth_next_sample(&g_backing_bass.synth) * g_backing_bass.gain;
+
+        if (mixed > 0.98f) mixed = 0.98f;
+        if (mixed < -0.98f) mixed = -0.98f;
+        out[i] = mixed;
+    }
 }
 
 static void play_audio_start(play_state_t *state)
@@ -301,7 +396,25 @@ static void play_audio_start(play_state_t *state)
     if (!IsAudioDeviceReady())
         InitAudioDevice();
 
-    synth_init(&g_play_synth, PLAY_AUDIO_SAMPLE_RATE);
+    synth_init(&g_lead_synth, PLAY_AUDIO_SAMPLE_RATE);
+    synth_set_default_wave(&g_lead_synth, SYNTH_WAVE_TRIANGLE, 1.0f);
+
+    synth_init(&g_backing_softp.synth, PLAY_AUDIO_SAMPLE_RATE);
+    synth_init(&g_backing_hardp.synth, PLAY_AUDIO_SAMPLE_RATE);
+    synth_init(&g_backing_bass.synth, PLAY_AUDIO_SAMPLE_RATE);
+
+    g_backing_softp.wave = SYNTH_WAVE_SINE;
+    g_backing_softp.drive = 1.0f;
+    g_backing_softp.gain = 0.34f;
+    g_backing_hardp.wave = SYNTH_WAVE_DIST_SINE;
+    g_backing_hardp.drive = 2.6f;
+    g_backing_hardp.gain = 0.30f;
+    g_backing_bass.wave = SYNTH_WAVE_SQUARE;
+    g_backing_bass.drive = 1.0f;
+    g_backing_bass.gain = 0.22f;
+
+    backing_reset_all();
+
     g_play_stream = LoadAudioStream(PLAY_AUDIO_SAMPLE_RATE, 32, 1);
     SetAudioStreamCallback(g_play_stream, play_audio_callback);
     PlayAudioStream(g_play_stream);
@@ -346,8 +459,15 @@ static void play_audio_note_off(void)
     atomic_store(&g_audio_cmd, PLAY_AUDIO_CMD_NOTE_OFF);
 }
 
+static void play_audio_all_off(void)
+{
+    atomic_store(&g_audio_cmd, PLAY_AUDIO_CMD_ALL_OFF);
+}
+
 void play_init(play_state_t *state)
 {
+    int song_bpm = 120;
+
     play_deinit(state);
     state->bpm = 120;
     state->selected = 0;
@@ -364,6 +484,10 @@ void play_init(play_state_t *state)
     state->audio_active = 0;
     memset(state->history_cols, 0, sizeof(state->history_cols));
 
+    memset(&g_backing_softp, 0, sizeof(g_backing_softp));
+    memset(&g_backing_hardp, 0, sizeof(g_backing_hardp));
+    memset(&g_backing_bass, 0, sizeof(g_backing_bass));
+
     if (midi_extract_track_notes("songs/demo.mid", "lead", &state->melody) == 0 && state->melody.group_count > 0)
     {
         state->melody_loaded = 1;
@@ -373,6 +497,25 @@ void play_init(play_state_t *state)
     {
         state->melody_loaded = 0;
     }
+
+    if (midi_extract_song_bpm("songs/demo.mid", &song_bpm) == 0)
+        state->bpm = clampi(song_bpm, PLAY_MIN_BPM, PLAY_MAX_BPM);
+
+    if (midi_extract_track_note_events("songs/demo.mid", "soft_p", &g_backing_softp.midi) == 0)
+        g_backing_softp.loaded = 1;
+    if (midi_extract_track_note_events("songs/demo.mid", "hard_p", &g_backing_hardp.midi) == 0)
+        g_backing_hardp.loaded = 1;
+    if (midi_extract_track_note_events("songs/demo.mid", "bass", &g_backing_bass.midi) == 0)
+        g_backing_bass.loaded = 1;
+
+    if (g_backing_softp.loaded) g_song_tpq = g_backing_softp.midi.ticks_per_quarter;
+    else if (g_backing_hardp.loaded) g_song_tpq = g_backing_hardp.midi.ticks_per_quarter;
+    else if (g_backing_bass.loaded) g_song_tpq = g_backing_bass.midi.ticks_per_quarter;
+    else g_song_tpq = 480;
+
+    atomic_store(&g_bpm_atomic, state->bpm);
+    atomic_store(&g_backing_paused, 0);
+    atomic_store(&g_backing_restart, 1);
 
     play_audio_start(state);
 }
@@ -386,6 +529,16 @@ void play_deinit(play_state_t *state)
         midi_free_note_sequence(&state->melody);
     memset(&state->melody, 0, sizeof(state->melody));
     state->melody_loaded = 0;
+
+    if (g_backing_softp.loaded)
+        midi_free_track_events(&g_backing_softp.midi);
+    if (g_backing_hardp.loaded)
+        midi_free_track_events(&g_backing_hardp.midi);
+    if (g_backing_bass.loaded)
+        midi_free_track_events(&g_backing_bass.midi);
+    memset(&g_backing_softp, 0, sizeof(g_backing_softp));
+    memset(&g_backing_hardp, 0, sizeof(g_backing_hardp));
+    memset(&g_backing_bass, 0, sizeof(g_backing_bass));
 }
 
 play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds, int width, int height)
@@ -412,11 +565,18 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
         state->bpm -= in.rot_dl;
         state->bpm += in.rot_dr;
         state->bpm = clampi(state->bpm, PLAY_MIN_BPM, PLAY_MAX_BPM);
+        atomic_store(&g_bpm_atomic, state->bpm);
 
         if (rot_pressed)
         {
             state->select_mode = 0;
             state->is_playing = 1; // "restart play session"
+            state->step_index = 0;
+            state->scroll_accum = 0.0f;
+            memset(state->history_cols, 0, sizeof(state->history_cols));
+            atomic_store(&g_backing_paused, 0);
+            atomic_store(&g_backing_restart, 1);
+            play_audio_all_off();
             if (state->prev_play_down)
                 play_audio_note_on(state);
         }
@@ -433,11 +593,12 @@ play_action_t play_update(play_state_t *state, input_poll_t in, float dt_seconds
             {
                 state->is_playing = 0;   // "turn the song off"
                 state->select_mode = 1;  // enter BPM edit mode
-                play_audio_note_off();
+                atomic_store(&g_backing_paused, 1);
+                play_audio_all_off();
             }
             else
             {
-                play_audio_note_off();
+                play_audio_all_off();
                 return PLAY_ACTION_EXIT_TO_MENU;
             }
         }

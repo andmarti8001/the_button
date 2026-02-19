@@ -298,7 +298,6 @@ int main(void)
     menu_init(&menu_state);
     play_state_t play_state;
     memset(&play_state, 0, sizeof(play_state));
-    play_init(&play_state);
     app_state_t app_state = APP_SPLASH;
 
     const float aspect = (float)FB_WIDTH / (float)FB_HEIGHT;
