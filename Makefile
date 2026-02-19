@@ -15,8 +15,10 @@ SRC := src/write_splash.c src/inputs.c src/intro_animation.c src/menu.c src/play
 BIN := splash_viewer
 PLAY_SRC := src/play_main.c src/play.c src/inputs.c
 PLAY_BIN := play_viewer
+AUDIO_PLAY_SRC := src/play_audio_main.c src/inputs.c src/midi_lead.c src/synth.c
+AUDIO_PLAY_BIN := play_audio_viewer
 
-.PHONY: install-deps build run build-play run-play clean
+.PHONY: install-deps build run build-play run-play build-play-audio run-play-audio clean
 
 install-deps:
 	brew install raylib pkg-config
@@ -33,5 +35,11 @@ build-play:
 run-play: build-play
 	./$(PLAY_BIN)
 
+build-play-audio:
+	$(CC) $(CFLAGS) $(RAYLIB_CFLAGS) $(AUDIO_PLAY_SRC) -o $(AUDIO_PLAY_BIN) $(LDFLAGS)
+
+run-play-audio: build-play-audio
+	./$(AUDIO_PLAY_BIN)
+
 clean:
-	rm -f $(BIN) $(PLAY_BIN)
+	rm -f $(BIN) $(PLAY_BIN) $(AUDIO_PLAY_BIN)
