@@ -16,6 +16,7 @@ static int has_midi_ext(const char *name)
 static void make_display_name(char out[SONG_NAME_MAX], const char *filename)
 {
     int j = 0;
+    int prev_space = 1;
     for (int i = 0; filename[i] && j < (SONG_NAME_MAX - 1); i++)
     {
         char c = filename[i];
@@ -23,14 +24,33 @@ static void make_display_name(char out[SONG_NAME_MAX], const char *filename)
             break;
 
         if (c == '_' || c == '-')
-            c = ' ';
-        else
+        {
+            if (!prev_space)
+            {
+                out[j++] = ' ';
+                prev_space = 1;
+            }
+            continue;
+        }
+        else if (isalnum((unsigned char)c))
+        {
             c = (char)toupper((unsigned char)c);
-
-        if (!isalnum((unsigned char)c) && c != ' ')
-            c = ' ';
-        out[j++] = c;
+            out[j++] = c;
+            prev_space = 0;
+        }
+        else if (c == ' ')
+        {
+            if (!prev_space)
+            {
+                out[j++] = ' ';
+                prev_space = 1;
+            }
+        }
+        // Skip unsupported punctuation entirely to avoid visual blank holes.
     }
+
+    while (j > 0 && out[j - 1] == ' ')
+        j--;
     out[j] = '\0';
 }
 

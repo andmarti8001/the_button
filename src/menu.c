@@ -80,17 +80,27 @@ static const uint8_t *glyph_5x7(char c)
     static const uint8_t g_c[5] = {0x1C,0x22,0x41,0x41,0x22};
     static const uint8_t g_d[5] = {0x7F,0x41,0x41,0x22,0x1C};
     static const uint8_t g_e[5] = {0x7F,0x49,0x49,0x49,0x41};
+    static const uint8_t g_f[5] = {0x7F,0x48,0x48,0x48,0x40};
+    static const uint8_t g_g[5] = {0x3E,0x41,0x45,0x45,0x26};
     static const uint8_t g_h[5] = {0x7F,0x08,0x08,0x08,0x7F};
     static const uint8_t g_i[5] = {0x00,0x41,0x7F,0x41,0x00};
+    static const uint8_t g_j[5] = {0x02,0x01,0x01,0x01,0x7E};
+    static const uint8_t g_k[5] = {0x7F,0x08,0x14,0x22,0x41};
     static const uint8_t g_l[5] = {0x7F,0x01,0x01,0x01,0x01};
     static const uint8_t g_m[5] = {0x7F,0x20,0x10,0x20,0x7F};
     static const uint8_t g_n[5] = {0x7F,0x10,0x08,0x04,0x7F};
     static const uint8_t g_o[5] = {0x3E,0x41,0x41,0x41,0x3E};
     static const uint8_t g_p[5] = {0x7F,0x48,0x48,0x48,0x30};
+    static const uint8_t g_q[5] = {0x3E,0x41,0x45,0x42,0x3D};
     static const uint8_t g_r[5] = {0x7F,0x48,0x4C,0x4A,0x31};
+    static const uint8_t g_s[5] = {0x31,0x49,0x49,0x49,0x46};
     static const uint8_t g_t[5] = {0x40,0x40,0x7F,0x40,0x40};
     static const uint8_t g_u[5] = {0x7E,0x01,0x01,0x01,0x7E};
+    static const uint8_t g_v[5] = {0x7C,0x02,0x01,0x02,0x7C};
+    static const uint8_t g_w[5] = {0x7E,0x01,0x0E,0x01,0x7E};
     static const uint8_t g_x[5] = {0x63,0x14,0x08,0x14,0x63};
+    static const uint8_t g_y[5] = {0x70,0x08,0x07,0x08,0x70};
+    static const uint8_t g_z[5] = {0x43,0x45,0x49,0x51,0x61};
 
     if (c >= 'a' && c <= 'z')
         c = (char)(c - 'a' + 'A');
@@ -111,17 +121,27 @@ static const uint8_t *glyph_5x7(char c)
         case 'C': return g_c;
         case 'D': return g_d;
         case 'E': return g_e;
+        case 'F': return g_f;
+        case 'G': return g_g;
         case 'H': return g_h;
         case 'I': return g_i;
+        case 'J': return g_j;
+        case 'K': return g_k;
         case 'L': return g_l;
         case 'M': return g_m;
         case 'N': return g_n;
         case 'O': return g_o;
         case 'P': return g_p;
+        case 'Q': return g_q;
         case 'R': return g_r;
+        case 'S': return g_s;
         case 'T': return g_t;
         case 'U': return g_u;
+        case 'V': return g_v;
+        case 'W': return g_w;
         case 'X': return g_x;
+        case 'Y': return g_y;
+        case 'Z': return g_z;
         default: return g_space;
     }
 }
